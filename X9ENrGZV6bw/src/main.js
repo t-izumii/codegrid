@@ -45,8 +45,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const COL = 5;
   const ROW = 4;
-  const gap = 20; // タイル間の隙間(px)
+  const gap = 40; // タイル間の隙間(px)
 
+  // 各タイルの表示サイズを計算
   let itemWidthX = (viewPort.width - gap * (COL - 1)) / COL;
   let itemWidthY = (viewPort.height - gap * (ROW - 1)) / ROW;
 
@@ -58,45 +59,51 @@ document.addEventListener("DOMContentLoaded", () => {
     color: 0x00ff00,
   });
 
-  // 画面全体のサイズのメッシュが、itemWidthX/itemWidthY のサイズで見えるようにするためのスケールを計算
+  // colごとにgroupを作成
+  const colGroups = new THREE.Group();
+
+  // colGroupsにscaleを適用して、各タイルが適切なサイズで見えるようにする
   const scaleX = itemWidthX / meshWidth;
   const scaleY = itemWidthY / meshHeight;
+  colGroups.scale.set(scaleX, scaleY, 1);
 
-  // colごとにgroupを作成
-  const colGroups = [];
   for (let i = 0; i < COL; i++) {
     const group = new THREE.Group();
-    colGroups.push(group);
     for (let j = 0; j < ROW; j++) {
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.scale.set(scaleX, scaleY, 1);
-      mesh.position.x = (i - (COL - 1) / 2) * (itemWidthX + gap);
-      mesh.position.y = (j - (ROW - 1) / 2) * (itemWidthY + gap);
+      mesh.position.x = (i - (COL - 1) / 2) * (meshWidth + gap);
+      mesh.position.y = (j - (ROW - 1) / 2) * (meshHeight + gap);
       group.add(mesh);
     }
-    scene.add(group);
+    colGroups.add(group);
   }
 
+  scene.add(colGroups);
+
   // 各メッシュの初期位置を設定
-  colGroups.forEach((colGroup, index) => {
+  colGroups.children.forEach((colGroup, index) => {
     colGroup.children.forEach((mesh) => {
       if (index % 2 === 0) {
         // 偶数列は下から
-        mesh.position.y += -viewPort.height;
+        mesh.position.y += -viewPort.height / scaleY;
       } else {
         // 奇数列は上から
-        mesh.position.y += viewPort.height;
+        mesh.position.y += viewPort.height / scaleY;
       }
     });
   });
 
   // 0,2,4の列のメッシュを下からアニメーション（stagger付き）
-  const evenGroups = [colGroups[0], colGroups[2], colGroups[4]];
+  const evenGroups = [
+    colGroups.children[0],
+    colGroups.children[2],
+    colGroups.children[4],
+  ];
   evenGroups.forEach((group) => {
     tl.to(
       group.children.map((mesh) => mesh.position),
       {
-        y: (i) => (i - (ROW - 1) / 2) * (itemWidthY + gap),
+        y: (i) => (i - (ROW - 1) / 2) * (meshHeight + gap),
         duration: 3,
         ease: "power4.inOut",
         stagger: -0.2,
@@ -106,12 +113,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // 1,3の列のメッシュを上からアニメーション（stagger付き）
-  const oddGroups = [colGroups[1], colGroups[3]];
+  const oddGroups = [colGroups.children[1], colGroups.children[3]];
   oddGroups.forEach((group) => {
     tl.to(
       group.children.map((mesh) => mesh.position),
       {
-        y: (i) => (i - (ROW - 1) / 2) * (itemWidthY + gap),
+        y: (i) => (i - (ROW - 1) / 2) * (meshHeight + gap),
         duration: 3,
         ease: "power4.inOut",
         stagger: 0.2,
@@ -121,45 +128,26 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   tl.to(
-    colGroups.map((group) => group.position),
+    colGroups.scale,
     {
-      y: viewPort.height / 2 + gap / 2,
-      duration: 2,
+      x: 1,
+      y: 1,
+      duration: 3,
       ease: "power4.inOut",
+      stagger: -0.2,
     },
+    "-=1.8",
   );
 
-  // 全メッシュのスケールを1に戻す + 位置も調整してgapを保つ
-  let isFirstMesh = true;
-  colGroups.forEach((group, i) => {
-    group.children.forEach((mesh, j) => {
-      // scaleを1に戻す
-      tl.to(
-        mesh.scale,
-        {
-          x: 1,
-          y: 1,
-          duration: 2,
-          ease: "power4.inOut",
-        },
-        isFirstMesh ? "<" : "<", // groupのアニメーションと同時に開始
-      );
-
-      // 位置も調整してgapを保つ
-      tl.to(
-        mesh.position,
-        {
-          x: (i - (COL - 1) / 2) * (meshWidth + gap),
-          y: (j - (ROW - 1) / 2) * (meshHeight + gap),
-          duration: 2,
-          ease: "power4.inOut",
-        },
-        "<", // scaleのアニメーションと同時に開始
-      );
-
-      isFirstMesh = false;
-    });
-  });
+  tl.to(
+    colGroups.position,
+    {
+      y: viewPort.height / 2 + gap / 2,
+      duration: 3,
+      ease: "power4.inOut",
+    },
+    "<",
+  );
 
   function animate() {
     requestAnimationFrame(animate);
