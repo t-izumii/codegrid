@@ -63,8 +63,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const colGroups = new THREE.Group();
 
   // colGroupsにscaleを適用して、各タイルが適切なサイズで見えるようにする
-  const scaleX = itemWidthX / meshWidth;
-  const scaleY = itemWidthY / meshHeight;
+  const scaleX = (itemWidthX / meshWidth) * 1.25;
+  const scaleY = (itemWidthY / meshHeight) * 1.25;
   colGroups.scale.set(scaleX, scaleY, 1);
 
   for (let i = 0; i < COL; i++) {
@@ -81,14 +81,15 @@ document.addEventListener("DOMContentLoaded", () => {
   scene.add(colGroups);
 
   // 各メッシュの初期位置を設定
+  // scaleが変わっても確実に画面外に隠すため、余裕を持った移動距離にする
   colGroups.children.forEach((colGroup, index) => {
     colGroup.children.forEach((mesh) => {
       if (index % 2 === 0) {
         // 偶数列は下から
-        mesh.position.y += -viewPort.height / scaleY;
+        mesh.position.y += -meshHeight * ROW;
       } else {
         // 奇数列は上から
-        mesh.position.y += viewPort.height / scaleY;
+        mesh.position.y += meshHeight * ROW;
       }
     });
   });
@@ -128,6 +129,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   tl.to(
+    colGroups.position,
+    {
+      y: viewPort.height / 2 + gap / 2,
+      duration: 3,
+      ease: "power4.inOut",
+    },
+    "-=2",
+  );
+
+  tl.to(
     colGroups.scale,
     {
       x: 1,
@@ -135,16 +146,6 @@ document.addEventListener("DOMContentLoaded", () => {
       duration: 3,
       ease: "power4.inOut",
       stagger: -0.2,
-    },
-    "-=1.8",
-  );
-
-  tl.to(
-    colGroups.position,
-    {
-      y: viewPort.height / 2 + gap / 2,
-      duration: 3,
-      ease: "power4.inOut",
     },
     "<",
   );
