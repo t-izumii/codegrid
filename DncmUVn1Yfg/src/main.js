@@ -10,31 +10,38 @@ import {
   renderVertexShader,
 } from "./shaders";
 
-document.addEventListener("DOMContentLoaded", () => {
-  gsap.registerPlugin(ScrollTrigger, SplitText);
+// Constants
+const CAMERA_FOV = 50;
+const FONT_SIZE = 100;
+const BACKGROUND_COLOR = "#fb74277";
+const TEXT_COLOR = "#fef4b8";
+const TEXT_CONTENT = "PNRM CREATIVE";
+const MAX_PIXEL_RATIO = 2;
 
+// Initialize smooth scrolling
+function initSmoothScrolling() {
+  gsap.registerPlugin(ScrollTrigger, SplitText);
   const lenis = new Lenis();
   lenis.on("scroll", ScrollTrigger.update);
   gsap.ticker.add((time) => lenis.raf(time * 1000));
+}
 
-  const viewPort = {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  };
-
-  const simScene = new THREE.Scene();
-  const scene = new THREE.Scene();
-  const fov = 50;
-  const fovRad = (fov / 2) * (Math.PI / 180);
-  let distance = viewPort.height / 2 / Math.tan(fovRad);
-
+// Setup camera with responsive positioning
+function createCamera(viewPort) {
+  const fovRad = (CAMERA_FOV / 2) * (Math.PI / 180);
+  const distance = viewPort.height / 2 / Math.tan(fovRad);
   const camera = new THREE.PerspectiveCamera(
-    fov,
+    CAMERA_FOV,
     viewPort.width / viewPort.height,
     0.1,
-    10000,
+    10000
   );
   camera.position.z = distance;
+  return camera;
+}
+
+// Setup WebGL renderer with optimal settings
+function createRenderer(viewPort) {
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
     alpha: true,
@@ -42,17 +49,17 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   renderer.setClearColor(0x000000, 1);
   renderer.setSize(viewPort.width, viewPort.height);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.outputEncoding = THREE.LinearEncoding;
   renderer.toneMapping = THREE.NoToneMapping;
   renderer.toneMappingExposure = 1.0;
+  return renderer;
+}
 
-  document.querySelector(".webgl-container").appendChild(renderer.domElement);
-
-  const mouse = new THREE.Vector2();
-  let frame = 0;
+// Create render targets for ping-pong rendering
+function createRenderTargets(viewPort) {
   const options = {
     format: THREE.RGBAFormat,
     type: THREE.FloatType,
@@ -62,17 +69,111 @@ document.addEventListener("DOMContentLoaded", () => {
     depthBuffer: false,
   };
 
-  let rtA = new THREE.WebGLRenderTarget(
-    viewPort.width,
-    viewPort.height,
-    options,
-  );
-  let rtB = new THREE.WebGLRenderTarget(
-    viewPort.width,
-    viewPort.height,
-    options,
-  );
+  return {
+    rtA: new THREE.WebGLRenderTarget(viewPort.width, viewPort.height, options),
+    rtB: new THREE.WebGLRenderTarget(viewPort.width, viewPort.height, options),
+  };
+}
 
+// Draw text on canvas
+function drawTextOnCanvas(ctx, viewPort) {
+  ctx.fillStyle = BACKGROUND_COLOR;
+  ctx.fillRect(0, 0, viewPort.width, viewPort.height);
+
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.font = `bold ${FONT_SIZE}px PP Neue Montreal`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.textRendering = "geometricPrecision";
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.fillText(TEXT_CONTENT, viewPort.width / 2, viewPort.height / 2);
+}
+
+// Initialize canvas texture
+function createTextTexture(viewPort) {
+  const canvas = document.createElement("canvas");
+  canvas.width = viewPort.width;
+  canvas.height = viewPort.height;
+
+  const ctx = canvas.getContext("2d", { alpha: true });
+  drawTextOnCanvas(ctx, viewPort);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.format = THREE.RGBAFormat;
+
+  return { canvas, ctx, texture };
+}
+
+// Setup mouse tracking
+function setupMouseTracking(renderer, mouse, viewPort) {
+  renderer.domElement.addEventListener("mousemove", (e) => {
+    mouse.x = e.clientX / viewPort.width;
+    mouse.y = 1 - e.clientY / viewPort.height;
+  });
+
+  renderer.domElement.addEventListener("mouseleave", () => {
+    mouse.set(0, 0);
+  });
+}
+
+// Handle window resize
+function setupResizeHandler(
+  viewPort,
+  camera,
+  renderer,
+  renderTargets,
+  simMaterial,
+  canvas,
+  ctx,
+  textTexture
+) {
+  window.addEventListener("resize", () => {
+    viewPort.width = window.innerWidth;
+    viewPort.height = window.innerHeight;
+
+    camera.aspect = viewPort.width / viewPort.height;
+    camera.updateMatrix();
+
+    renderer.setSize(viewPort.width, viewPort.height);
+
+    renderTargets.rtA.setSize(viewPort.width, viewPort.height);
+    renderTargets.rtB.setSize(viewPort.width, viewPort.height);
+
+    simMaterial.uniforms.uResolution.value.set(viewPort.width, viewPort.height);
+
+    canvas.width = viewPort.width;
+    canvas.height = viewPort.height;
+    drawTextOnCanvas(ctx, viewPort);
+    textTexture.needsUpdate = true;
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initSmoothScrolling();
+
+  const viewPort = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+
+  // Setup scenes
+  const simScene = new THREE.Scene();
+  const scene = new THREE.Scene();
+
+  // Setup camera and renderer
+  const camera = createCamera(viewPort);
+  const renderer = createRenderer(viewPort);
+  document.querySelector(".webgl-container").appendChild(renderer.domElement);
+
+  // Setup render targets
+  const mouse = new THREE.Vector2();
+  let frame = 0;
+  const renderTargets = createRenderTargets(viewPort);
+
+  // Create simulation material
   const simMaterial = new THREE.ShaderMaterial({
     uniforms: {
       uTextureA: { value: null },
@@ -87,6 +188,7 @@ document.addEventListener("DOMContentLoaded", () => {
     fragmentShader: simulationFragmentShader,
   });
 
+  // Create render material
   const renderMaterial = new THREE.ShaderMaterial({
     uniforms: {
       uTextureA: { value: null },
@@ -97,6 +199,7 @@ document.addEventListener("DOMContentLoaded", () => {
     transparent: true,
   });
 
+  // Create meshes
   const plane = new THREE.PlaneGeometry(viewPort.width, viewPort.height, 2, 2);
   const simMesh = new THREE.Mesh(plane, simMaterial);
   const renderMesh = new THREE.Mesh(plane, renderMaterial);
@@ -104,76 +207,45 @@ document.addEventListener("DOMContentLoaded", () => {
   simScene.add(simMesh);
   scene.add(renderMesh);
 
-  const canvas = document.createElement("canvas");
-  canvas.width = viewPort.width;
-  canvas.height = viewPort.height;
+  // Setup text texture
+  const { canvas, ctx, texture: textTexture } = createTextTexture(viewPort);
 
-  const ctx = canvas.getContext("2d", { alpha: true });
-  ctx.fillStyle = "#fb74277";
-  ctx.fillRect(0, 0, viewPort.width, viewPort.height);
+  // Setup event listeners
+  setupMouseTracking(renderer, mouse, viewPort);
+  setupResizeHandler(
+    viewPort,
+    camera,
+    renderer,
+    renderTargets,
+    simMaterial,
+    canvas,
+    ctx,
+    textTexture
+  );
 
-  const fontSize = 100;
-  ctx.fillStyle = "#fef4b8";
-  ctx.font = `bold ${fontSize}px PP Neue Montreal`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.textRendering = "geometricPrecision";
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.fillText("PNRM CREATIVE", viewPort.width / 2, viewPort.height / 2);
-
-  const textTexture = new THREE.CanvasTexture(canvas);
-  textTexture.minFilter = THREE.LinearFilter;
-  textTexture.magFilter = THREE.LinearFilter;
-  textTexture.format = THREE.RGBAFormat;
-
-  window.addEventListener("resize", () => {
-    viewPort.width = window.innerWidth;
-    viewPort.height = window.innerHeight;
-    camera.aspect = viewPort.width / viewPort.height;
-    camera.updateMatrix();
-    renderer.setSize(viewPort.width, viewPort.height);
-    rtA.setSize(viewPort.width, viewPort.height);
-    rtB.setSize(viewPort.width, viewPort.height);
-    simMaterial.uniforms.uResolution.value.set(viewPort.width, viewPort.height);
-
-    canvas.width = viewPort.width;
-    canvas.height = viewPort.height;
-
-    ctx.fillStyle = "#fb74277";
-    ctx.fillRect(0, 0, viewPort.width, viewPort.height);
-
-    textTexture.needsUpdate = true;
-  });
-
-  renderer.domElement.addEventListener("mousemove", (e) => {
-    mouse.x = e.clientX / viewPort.width;
-    mouse.y = 1 - e.clientY / viewPort.height;
-  });
-
-  renderer.domElement.addEventListener("mouseLeave", (e) => {
-    mouse.set(0, 0);
-  });
-
+  // Animation loop with ping-pong rendering
   function animate() {
     simMaterial.uniforms.uFrame.value = frame++;
     simMaterial.uniforms.uTime.value = performance.now() / 1000;
 
-    simMaterial.uniforms.uTextureA.value = rtA.texture;
-    renderer.setRenderTarget(rtB);
+    // Simulation pass
+    simMaterial.uniforms.uTextureA.value = renderTargets.rtA.texture;
+    renderer.setRenderTarget(renderTargets.rtB);
     renderer.render(simScene, camera);
 
-    renderMaterial.uniforms.uTextureA.value = rtB.texture;
+    // Render pass
+    renderMaterial.uniforms.uTextureA.value = renderTargets.rtB.texture;
     renderMaterial.uniforms.uTextureB.value = textTexture;
-
     renderer.setRenderTarget(null);
     renderer.render(scene, camera);
 
     requestAnimationFrame(animate);
 
-    const temp = rtA;
-    rtA = rtB;
-    rtB = temp;
+    // Swap render targets (ping-pong)
+    const temp = renderTargets.rtA;
+    renderTargets.rtA = renderTargets.rtB;
+    renderTargets.rtB = temp;
   }
+
   animate();
 });
